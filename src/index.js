@@ -1,89 +1,74 @@
 import IGCParser from "igc-parser"
-import L from "leaflet"
 
-import createMap from "./createMap"
+import createMap from "./utils/createMap"
+import fetchFlight from "./utils/fetchFlight"
+import decodeIGC from "./utils/decodeIGC"
+import fillFlight from "./utils/fillFlight"
+import sanitizeIGC from "./utils/sanitizeIGC"
 
-import "./style.scss"
+import "./styles/style.scss"
 import "bootstrap"
 
-function fetchFlight( flightId, map, container ) {
-    const proxy = "http://cors-anywhere.herokuapp.com/"
-    const url = proxy + "https://xcportal.pl/" + flightId
+window.onload = function () {
+    const { mapContainer, drawingLayer } = createMap()
 
-    flightState.classList.add( "animate-pulse" )
-    loader.classList.remove( "d-none" )
-    container.eachLayer( ( layer ) => {
-        container.removeLayer(layer)
-    } )
+    const clearFlight = () => fillFlight()
 
-    fetch( url, {
-        method: 'GET',
-        mode: "cors",
-        headers: {
-            'Content-Type': 'application/text',
-        },
-    } ).then( res => res.text() ).then( raw => {
-        const igc = IGCParser.parse( raw )
+    const handleFlightChange = ( flightURI, scrollToState = true ) => {
+        flightForm.classList.remove( "is-invalid" )
+        flightId.classList.remove( "is-invalid" )
+        errorContainer.innerText = ""
 
-        flightPilot.innerText = igc.pilot
-        flightGliderType.innerText = igc.gliderType || "Brak danych"
-        flightDate.innerText = igc.date
+        flightState.classList.add( "animate-pulse" )
+        loader.classList.remove( "d-none" )
 
-        let duration = igc.fixes[ igc.fixes.length - 1 ].timestamp - igc.fixes[ 0 ].timestamp
-
-        if ( igc.fixes.length ) {
-            flightStartLevel.innerText = igc.fixes[ 0 ].gpsAltitude + " m"
-            flightFinishLevel.innerText = igc.fixes[ igc.fixes.length - 1 ].gpsAltitude + " m"
-            flightStartTime.innerText = igc.fixes[ 0 ].time
-            flightFinishTime.innerText = igc.fixes[ igc.fixes.length - 1 ].time
-
-            L.marker( [
-                igc.fixes[ 0 ].latitude,
-                igc.fixes[ 0 ].longitude
-            ] ).addTo( container )
-            L.marker( [
-                igc.fixes[ igc.fixes.length - 1 ].latitude,
-                igc.fixes[ igc.fixes.length - 1 ].longitude
-            ] ).addTo( container )
-        }
-
-        const points = igc.fixes.map( fix => [ fix.latitude, fix.longitude ] )
-        const path = L.polyline( points, { color: 'blue' } ).addTo( container )
-        map.fitBounds( path.getBounds() )
-
-        let distance = 0
-
-        let prevPoint = null
-        path.getLatLngs().forEach( point => {
-            if ( prevPoint ) {
-                distance += prevPoint.distanceTo( point )
-            }
-            prevPoint = point
+        drawingLayer.eachLayer( ( layer ) => {
+            drawingLayer.removeLayer( layer )
         } )
 
-        const velocity = Math.round( ( distance / 100 ) / ( duration / 1000 / 60 / 60 ) ) / 10
+        clearFlight()
+        fetchFlight( flightURI ).then( res => {
+            const igc = sanitizeIGC( res )
+            const flightData = decodeIGC( igc )
 
-        flightDistance.innerText = Math.round( distance / 1000 ) + " km"
-        flightDuration.innerText = new Date( duration ).toISOString().substr( 11, 8 )
-        flightVelocity.innerText = velocity + " km/h"
+            fillFlight( flightData, {
+                mapContainer,
+                drawingLayer
+            } )
 
-        flightState.classList.remove( "animate-pulse" )
-        loader.classList.add( "d-none" )
+            setTimeout( () => {
+                flightState.classList.remove( "animate-pulse" )
+                loader.classList.add( "d-none" )
+            }, 500 )
 
-    } ).catch( err => {
-        console.error( err )
-        flightState.classList.remove( "animate-pulse" )
-        loader.classList.add( "d-none" )
-    } )
-}
+            if ( scrollToState ) {
+                flightState.scrollIntoView()
+            }
+        } ).catch( err => {
+            setTimeout( () => {
+                flightState.classList.remove( "animate-pulse" )
+                loader.classList.add( "d-none" )
+            }, 500 )
 
-window.onload = function () {
-    const { map, drawer } = createMap()
+            flightForm.classList.add( "is-invalid" )
+            flightId.classList.add( "is-invalid" )
+            errorContainer.innerText = "Ops.. something went wrong. Make sure that the provided URL is correct!"
+        } )
+    }
 
-    fetchFlight( "sites/default/files/tracks/2021-03-28/13sb67611819384449.igc", map, drawer )
-
+    handleFlightChange( "sites/default/files/tracks/2021-03-28/13sb67611819384449.igc", false )
     flightForm.addEventListener( "submit", function ( e ) {
         e.preventDefault()
-        fetchFlight( flightId.value, map, drawer )
+        handleFlightChange( flightId.value )
     } )
+
+    const flightExamples = document.querySelectorAll( ".exampleFlight" )
+    if ( flightExamples ) {
+        flightExamples.forEach( element =>
+            element.addEventListener( "click", ( e ) => {
+                flightId.value = e.target.innerHTML
+                handleFlightChange( e.target.innerHTML )
+            } )
+        )
+    }
 }

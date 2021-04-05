@@ -1,8 +1,16 @@
 @import "bootstrap";
 @import "leaflet";
 
+.exampleFlight:hover {
+    color: #316598;
+}
+
 .animate-pulse {
     animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.cursor-pointer {
+    cursor: pointer;
 }
 
 @keyframes pulse {
